@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "trains"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy = "0.8.0"
+bevy_egui = "0.15.1"
+bevy_mod_picking = "0.8.1"
+bevy_prototype_lyon = "0.6.0"
+iyes_loopless = "0.7.0"
+petgraph = "0.6.2"
