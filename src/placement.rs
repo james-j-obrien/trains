@@ -123,7 +123,10 @@ impl TrackParams {
             let turn_tile = turn_vec.as_ivec2();
             let target_facing = start_facing + tile_angle.signum() as Orientation;
 
-            if straight_tile == IVec2::ZERO || straight_vec.dot(start_unit) < 0. {
+            if straight_tile == IVec2::ZERO
+                || straight_length < 0.
+                || projected_tile.dot(start_unit) < 0.
+            {
                 tracks.push((start_tile + turn_tile, target_facing));
             } else {
                 tracks.push((start_tile + straight_tile, start_facing));
@@ -234,6 +237,7 @@ pub fn placement(
         if mouse_buttons.just_pressed(MouseButton::Right) {
             placement.start = None;
             placement.facing = None;
+            arrows_vis.is_visible = false;
         }
 
         let mouse_tile = world_pos_to_tile(mouse_pos);
@@ -339,6 +343,6 @@ fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TileP
 
 pub fn track_control(mut ctx: ResMut<EguiContext>, mut params: ResMut<TrackParams>) {
     egui::Window::new("Tracks").show(ctx.ctx_mut(), |ui| {
-        ui.add(egui::Slider::new(&mut params.radius, 1.0..=20.0).text("Radius"));
+        ui.add(egui::Slider::new(&mut params.radius, 2.5..=20.0).text("Radius"));
     });
 }

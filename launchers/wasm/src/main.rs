@@ -3,7 +3,7 @@ use stylist::yew::styled_component;
 use stylist::{css, global_style};
 use yew::prelude::*;
 
-use my_game::LAUNCHER_TITLE;
+use trains::TITLE;
 
 fn set_window_title(title: &str) {
     web_sys::window()
@@ -32,7 +32,7 @@ fn set_global_css() {
 
 #[styled_component(Root)]
 fn view() -> Html {
-    set_window_title(LAUNCHER_TITLE);
+    set_window_title(TITLE);
     set_global_css();
 
     let css = css!(
@@ -55,7 +55,7 @@ fn main() {
     // Mount the DOM
     yew::start_app::<Root>();
     // Start the Bevy App
-    let mut app = my_game::app();
+    let mut app = trains::app();
     info!("Starting launcher: WASM");
     app.run();
 }

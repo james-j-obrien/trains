@@ -19,35 +19,36 @@ use placement::*;
 
 pub const TITLE: &str = "Track Laying";
 
-fn app() -> App {
-    App::new()
-        .insert_resource(WindowDescriptor {
-            title: TITLE.to_string(),
-            height: WINDOW_HEIGHT,
-            width: WINDOW_WIDTH,
-            canvas: Some("#bevy".to_string()),
-            fit_canvas_to_parent: true,
-            ..default()
-        })
-        .insert_resource(ClearColor(Color::rgb_u8(42, 42, 42)))
-        .add_plugins(DefaultPlugins)
-        .add_plugins(DefaultPickingPlugins)
-        .add_plugin(EguiPlugin)
-        // .add_plugin(DebugCursorPickingPlugin) // <- Adds the green debug cursor.
-        // .add_plugin(DebugEventsPickingPlugin)
-        .add_plugin(ShapePlugin) // <- Adds debug event logging.
-        .add_startup_system(setup)
-        .add_startup_system(setup_network)
-        .insert_resource(MousePos(None))
-        .insert_resource(PlacementState::default())
-        .add_system(camera_pan.before(mouse_to_world))
-        .add_system(camera_zoom.before(mouse_to_world))
-        .add_system(mouse_to_world)
-        .add_system(highlight.after(mouse_to_world))
-        .add_system(extract_network_to_mesh)
-        .add_startup_system(setup_placement)
-        .add_system(placement.after(mouse_to_world))
-        .add_system(track_control)
+pub fn app() -> App {
+    let mut app = App::new();
+    app.insert_resource(WindowDescriptor {
+        title: TITLE.to_string(),
+        height: WINDOW_HEIGHT,
+        width: WINDOW_WIDTH,
+        canvas: Some("#bevy".to_string()),
+        fit_canvas_to_parent: true,
+        ..default()
+    })
+    .insert_resource(ClearColor(Color::rgb_u8(42, 42, 42)))
+    .add_plugins(DefaultPlugins)
+    .add_plugins(DefaultPickingPlugins)
+    .add_plugin(EguiPlugin)
+    // .add_plugin(DebugCursorPickingPlugin) // <- Adds the green debug cursor.
+    // .add_plugin(DebugEventsPickingPlugin) // <- Adds debug event logging.
+    .add_plugin(ShapePlugin)
+    .add_startup_system(setup)
+    .add_startup_system(setup_network)
+    .insert_resource(MousePos(None))
+    .insert_resource(PlacementState::default())
+    .add_system(camera_pan.before(mouse_to_world))
+    .add_system(camera_zoom.before(mouse_to_world))
+    .add_system(mouse_to_world)
+    .add_system(highlight.after(mouse_to_world))
+    .add_system(extract_network_to_mesh)
+    .add_startup_system(setup_placement)
+    .add_system(placement.after(mouse_to_world))
+    .add_system(track_control);
+    app
 }
 
 fn setup(mut commands: Commands) {
