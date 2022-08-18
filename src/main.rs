@@ -1,8 +1,8 @@
+#![allow(clippy::too_many_arguments)]
+
 use bevy::{prelude::*, render::camera::RenderTarget};
 use bevy_egui::EguiPlugin;
-use bevy_mod_picking::{
-    DebugCursorPickingPlugin, DebugEventsPickingPlugin, DefaultPickingPlugins, PickingCameraBundle,
-};
+use bevy_mod_picking::DefaultPickingPlugins;
 use bevy_prototype_lyon::{prelude::*, shapes};
 
 mod camera;

@@ -28,7 +28,8 @@ pub fn camera_zoom(
 
     for (mut proj, mut pos) in &mut cameras {
         let old_scale = proj.scale;
-        proj.scale = proj.scale * (1. + -scroll * 0.001); //.max(cam.min_scale);
+        proj.scale *= 1. + -scroll * 0.001;
+        // proj.scale = proj.scale * (1. + -scroll * 0.001).max(cam.min_scale);
 
         // if let Some(max_scale) = cam.max_scale {
         //     proj.scale = proj.scale.min(max_scale);

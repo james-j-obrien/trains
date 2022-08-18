@@ -1,10 +1,6 @@
-use std::{
-    collections::VecDeque,
-    f32::consts::PI,
-    ops::{Index, Sub},
-};
+use std::{f32::consts::PI, ops::Index};
 
-use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashSet};
+use bevy::prelude::*;
 use bevy_egui::{egui, EguiContext};
 use bevy_prototype_lyon::entity::ShapeBundle;
 
