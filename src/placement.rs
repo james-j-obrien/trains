@@ -2,6 +2,7 @@ use std::{f32::consts::PI, ops::Index};
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContext};
+use bevy_mod_picking::{HoverEvent, PickableBundle, PickingEvent};
 use bevy_prototype_lyon::entity::ShapeBundle;
 
 use super::*;
@@ -137,6 +138,9 @@ impl TrackParams {
         tracks
     }
 }
+
+#[derive(Component)]
+pub struct Track;
 
 #[derive(Component)]
 pub struct Arrow;
@@ -307,7 +311,10 @@ pub fn placement(
                 if mouse_buttons.just_pressed(MouseButton::Left) {
                     let mut path = PathBuilder::new();
                     track_path(&mut path, tracks[0], tracks[1]);
-                    commands.spawn_bundle(build_path(path, Color::WHITE, 8., 0.4));
+                    commands
+                        .spawn_bundle(build_path(path, Color::WHITE, 8., 0.4))
+                        .insert_bundle(PickableBundle::default())
+                        .insert(Track);
 
                     placement.start = Some(tracks[1].0);
                     placement.facing = Some(tracks[1].1);
@@ -346,10 +353,25 @@ pub fn track_control(mut ctx: ResMut<EguiContext>, mut params: ResMut<TrackParam
         ui.add(egui::Slider::new(&mut params.radius, 2.5..=20.0).text("Radius"));
         ui.add_space(4.0);
         ui.label("Left-click to build tracks.");
-        ui.label("Right-click to cancel.");
+        ui.label("Right-click to cancel and erase.");
         ui.label("Hold Shift to allow S-bends.");
         ui.label("Left-click to build tracks.");
         ui.label("Scroll to zoom.");
         ui.label("Middle mouse to pan.");
     });
+}
+
+pub fn remove_tracks(
+    mut commands: Commands,
+    mut events: EventReader<PickingEvent>,
+    mouse_buttons: Res<Input<MouseButton>>,
+    tracks: Query<(), With<Track>>,
+) {
+    for event in events.iter() {
+        if let PickingEvent::Hover(HoverEvent::JustEntered(e)) = event {
+            if mouse_buttons.pressed(MouseButton::Right) && tracks.contains(*e) {
+                commands.entity(*e).despawn();
+            }
+        }
+    }
 }

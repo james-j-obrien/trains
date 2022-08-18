@@ -2,7 +2,7 @@
 
 use bevy::{prelude::*, render::camera::RenderTarget};
 use bevy_egui::EguiPlugin;
-use bevy_mod_picking::DefaultPickingPlugins;
+use bevy_mod_picking::{DefaultPickingPlugins, PickingCameraBundle};
 use bevy_prototype_lyon::{prelude::*, shapes};
 
 mod camera;
@@ -47,12 +47,15 @@ pub fn app() -> App {
     .add_system(extract_network_to_mesh)
     .add_startup_system(setup_placement)
     .add_system(placement.after(mouse_to_world))
-    .add_system(track_control);
+    .add_system(track_control)
+    .add_system(remove_tracks.after(mouse_to_world));
     app
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn_bundle(Camera2dBundle::default());
+    commands
+        .spawn_bundle(Camera2dBundle::default())
+        .insert_bundle(PickingCameraBundle::default());
 
     // Spawn highlight entity
     let square = shapes::RegularPolygon {
