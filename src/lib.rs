@@ -17,13 +17,16 @@ use graph::*;
 mod placement;
 use placement::*;
 
-fn main() {
+pub const TITLE: &str = "Track Laying";
+
+fn app() -> App {
     App::new()
         .insert_resource(WindowDescriptor {
-            title: "trains".to_string(),
+            title: TITLE.to_string(),
             height: WINDOW_HEIGHT,
             width: WINDOW_WIDTH,
-            resizable: false,
+            canvas: Some("#bevy".to_string()),
+            fit_canvas_to_parent: true,
             ..default()
         })
         .insert_resource(ClearColor(Color::rgb_u8(42, 42, 42)))
@@ -45,7 +48,6 @@ fn main() {
         .add_startup_system(setup_placement)
         .add_system(placement.after(mouse_to_world))
         .add_system(track_control)
-        .run();
 }
 
 fn setup(mut commands: Commands) {
