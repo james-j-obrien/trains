@@ -36,7 +36,7 @@ fn main() {
         .add_startup_system(setup)
         .add_startup_system(setup_network)
         .insert_resource(MousePos(None))
-        .insert_resource(PlacementStart(None))
+        .insert_resource(PlacementState::default())
         .add_system(camera_pan.before(mouse_to_world))
         .add_system(camera_zoom.before(mouse_to_world))
         .add_system(mouse_to_world)
@@ -67,17 +67,14 @@ fn setup(mut commands: Commands) {
         .insert(Highlight);
 }
 
-type TilePos = (i32, i32);
+type TilePos = IVec2;
 
 fn world_pos_to_tile(pos: Vec2) -> TilePos {
-    (
-        (pos.x / TILE_SIZE).floor() as i32,
-        (pos.y / TILE_SIZE).floor() as i32,
-    )
+    (pos / TILE_SIZE - 0.5).round().as_ivec2()
 }
 
 fn tile_to_world_pos(tile: TilePos) -> Vec2 {
-    Vec2::new(tile.0 as f32 * TILE_SIZE, tile.1 as f32 * TILE_SIZE)
+    tile.as_vec2() * TILE_SIZE
 }
 
 fn tile_to_center_pos(tile: TilePos) -> Vec2 {

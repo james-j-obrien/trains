@@ -58,7 +58,7 @@ pub fn camera_pan(
     let delta = current_pos - last_pos.unwrap_or(current_pos);
 
     for (mut transform, projection) in &mut cameras {
-        if mouse_buttons.pressed(MouseButton::Right) {
+        if mouse_buttons.pressed(MouseButton::Middle) {
             let scaling = Vec2::new(
                 window.width() / (projection.right - projection.left),
                 window.height() / (projection.top - projection.bottom),

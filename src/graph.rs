@@ -6,8 +6,10 @@ use super::*;
 
 #[derive(Component)]
 pub struct Network {
-    track_graph: UnGraphMap<TilePos, ()>,
+    track_graph: UnGraphMap<TileIndex, ()>,
 }
+
+pub type TileIndex = (i32, i32);
 
 pub fn setup_network(mut commands: Commands) {
     commands
@@ -35,8 +37,8 @@ pub fn extract_network_to_mesh(mut networks: Query<(&mut Network, &mut Path), Ch
     networks.for_each_mut(|(network, mut path)| {
         let mut path_builder = PathBuilder::new();
         network.track_graph.all_edges().for_each(|edge| {
-            path_builder.move_to(tile_to_world_pos(edge.0) + TILE_SIZE / 2.);
-            path_builder.line_to(tile_to_world_pos(edge.1) + TILE_SIZE / 2.);
+            path_builder.move_to(tile_to_center_pos(TilePos::from(edge.0)));
+            path_builder.line_to(tile_to_center_pos(TilePos::from(edge.1)));
         });
         *path = path_builder.build();
     });

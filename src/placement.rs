@@ -1,249 +1,34 @@
-use std::{collections::VecDeque, f32::consts::PI};
+use std::{
+    collections::VecDeque,
+    f32::consts::PI,
+    ops::{Index, Sub},
+};
 
-use bevy::{prelude::*, utils::HashSet};
+use bevy::{input::mouse::MouseWheel, prelude::*, utils::HashSet};
 use bevy_egui::{egui, EguiContext};
+use bevy_prototype_lyon::entity::ShapeBundle;
 
 use super::*;
-
-fn ur_neighbours(tile: TilePos) -> Vec<TilePos> {
-    vec![(tile.0, tile.1 + 1), (tile.0 + 1, tile.1)]
-}
-
-fn urd_neighbours(tile: TilePos) -> Vec<TilePos> {
-    vec![
-        (tile.0, tile.1 + 1),
-        (tile.0 + 1, tile.1),
-        (tile.0 + 1, tile.1 + 1),
-    ]
-}
-
-#[derive(Debug)]
-pub struct TrackSet {
-    params: TrackParams,
-    bends: Vec<TilePos>,
-    diags: Vec<TilePos>,
-    turn: TilePos,
-}
-
-impl TrackSet {
-    fn new(params: TrackParams) -> Self {
-        let (bends, diags, turn) = Self::generate_tracks(params.radius, params.divisor);
-
-        Self {
-            params,
-            bends,
-            diags,
-            turn,
-        }
-    }
-
-    fn generate_tracks(radius: f32, divisor: f32) -> (Vec<TilePos>, Vec<TilePos>, TilePos) {
-        let (bends, turns) = Self::generate_bends(radius, divisor);
-        let diags = Self::generate_diags(radius, divisor);
-        (bends, diags, turns)
-    }
-
-    fn generate_bends(radius: f32, divisor: f32) -> (Vec<TilePos>, TilePos) {
-        let facing = Vec2::Y;
-        let start_pos = tile_to_center_pos((0, 0));
-        let mut seen = HashSet::<TilePos>::new();
-        let mut queue = VecDeque::new();
-        let mut edge = Vec::new();
-
-        seen.insert((0, 0));
-        queue.push_back((0, 0));
-
-        while let Some(curr) = queue.pop_front() {
-            for next in ur_neighbours(curr) {
-                if seen.contains(&next) {
-                    continue;
-                }
-                seen.insert(next);
-                let pos = tile_to_center_pos(next);
-                let vec = pos - start_pos;
-                let angle = vec.angle_between(facing);
-                if angle >= 0. && angle <= PI / divisor {
-                    if vec.length() >= radius {
-                        edge.push(next);
-                    } else {
-                        queue.push_back(next);
-                    }
-                }
-            }
-        }
-
-        edge.sort_by_cached_key(|pos| pos.0);
-        let turn = edge.pop().unwrap();
-        let turn = (turn.0 - 1, turn.1 - 1);
-        (edge, turn)
-    }
-
-    fn generate_diags(radius: f32, divisor: f32) -> Vec<TilePos> {
-        let facing = angle_to_unit(PI / 4.);
-        let start_pos = tile_to_center_pos((0, 0));
-        let mut seen = HashSet::<TilePos>::new();
-        let mut queue = VecDeque::new();
-        let mut edge = Vec::new();
-
-        seen.insert((0, 0));
-        queue.push_back((0, 0));
-
-        while let Some(curr) = queue.pop_front() {
-            for next in urd_neighbours(curr) {
-                if seen.contains(&next) {
-                    continue;
-                }
-                seen.insert(next);
-                let pos = tile_to_center_pos(next);
-                let vec = pos - start_pos;
-                let angle = vec.angle_between(facing);
-                if angle >= 0. && angle <= PI / divisor / 2. {
-                    if vec.length() >= radius {
-                        edge.push(next);
-                    } else {
-                        queue.push_back(next);
-                    }
-                }
-            }
-        }
-
-        edge.sort_by_cached_key(|pos| pos.1);
-        edge
-    }
-
-    fn draw(&self, path: &mut PathBuilder) {
-        let zero = tile_to_center_pos((0, 0));
-
-        for bend in &self.bends {
-            path.move_to(zero);
-            let end_pos = tile_to_center_pos(*bend);
-            let ctrl_mag = zero.distance(end_pos) / 3.;
-            path.cubic_bezier_to(
-                zero + Vec2::Y * ctrl_mag,
-                end_pos - Vec2::Y * ctrl_mag,
-                end_pos,
-            );
-        }
-
-        let up_diag = angle_to_unit(PI / 4.);
-        let down_diag = angle_to_unit(PI + PI / 4.);
-
-        for diag in &self.diags {
-            path.move_to(zero);
-            let end_pos = tile_to_center_pos(*diag);
-            let ctrl_mag = zero.distance(end_pos) / 3.;
-            path.cubic_bezier_to(
-                zero + up_diag * ctrl_mag,
-                end_pos + down_diag * ctrl_mag,
-                end_pos,
-            );
-        }
-
-        path.move_to(zero);
-        let end_pos = tile_to_center_pos(self.turn);
-        let ctrl_mag = zero.distance(end_pos) / 3.;
-        path.cubic_bezier_to(
-            zero + Vec2::Y * ctrl_mag,
-            end_pos + down_diag * ctrl_mag,
-            end_pos,
-        );
-
-        path.move_to(zero);
-        let end_pos = tile_to_center_pos((self.turn.1, self.turn.0));
-        let ctrl_mag = zero.distance(end_pos) / 3.;
-        path.cubic_bezier_to(
-            zero + up_diag * ctrl_mag,
-            end_pos - Vec2::X * ctrl_mag,
-            end_pos,
-        );
-    }
-}
 
 #[derive(Component)]
 pub struct PlacementGhost;
 
 // Octant orientation, 0 is north
-type Orientation = i32;
+type Orientation = i8;
 
-pub struct PlacementStart(pub Option<TilePos>);
+#[derive(Default)]
+pub struct PlacementState {
+    start: Option<TilePos>,
+    facing_options: [bool; 8],
+    facing: Option<Orientation>,
+}
 
-// fn place_next(
-//     tracks: &mut Vec<(TilePos, Orientation)>,
-//     start_tile: TilePos,
-//     start_facing: Orientation,
-//     towards: TilePos,
-//     radius: f32,
-// ) {
-//     tracks.push((start_tile, start_facing));
-
-//     if start_tile == towards {
-//         return;
-//     }
-
-//     // Get tile that follows ray
-//     let start_pos = tile_to_center_pos(start_tile);
-//     let target_pos = tile_to_center_pos(towards);
-//     let clamped_vec = (target_pos - start_pos).normalize_or_zero() * radius;
-//     let end_tile = world_pos_to_tile(start_pos + clamped_vec);
-//     let end_pos = tile_to_center_pos(end_tile);
-
-//     // Determine if this falls within the correct orientation
-//     let end_vec = end_pos - start_pos;
-//     let end_facing = vec_to_octant(end_vec);
-
-//     let angle = octant_to_angle(start_facing);
-//     let left_bound = angle - PI / 8.;
-//     let left_vec = angle_to_unit(left_bound) * radius;
-//     let left_vec = left_vec.project_onto_normalized(angle_to_unit(angle + PI / 2.));
-
-//     let offset_left = end_vec - left_vec;
-//     println!("{:?}, {:?}", end_vec, left_vec);
-
-//     let right_bound = angle + PI / 8.;
-//     let right_vec = angle_to_unit(right_bound) * radius;
-
-//     let diff = (((end_facing - start_facing) + 4) % 8) - 4;
-//     if diff != 0 {
-//         let angle = octant_to_angle(start_facing) + PI / 8. * diff.signum() as f32;
-//         let ray_vec = angle_to_unit(angle) * radius;
-//         let end_tile = world_pos_to_tile(start_pos + ray_vec);
-
-//         let end_pos = tile_to_center_pos(end_tile);
-//         let end_facing = vec_to_octant(end_pos - start_pos);
-
-//         // Modify end tile to fall outside ray
-//         if end_facing == start_facing {}
-
-//         // path.move_to(start_pos);
-//         // path.line_to(start_pos + ray_vec);
-
-//         // place_next(tracks, end_tile, end_facing, towards, radius);
-//         tracks.push((end_tile, end_facing));
-//     } else {
-//         tracks.push((end_tile, end_facing));
-
-//         // place_next(tracks, end_tile, end_facing, towards, radius);
-//     }
-// }
-
-// fn track_placement(
-//     _path: &mut PathBuilder,
-//     start_tile: TilePos,
-//     start_facing: Orientation,
-//     towards: TilePos,
-//     radius: f32,
-// ) -> Vec<(TilePos, Orientation)> {
-//     let mut tracks = Vec::new();
-//     place_next(&mut tracks, start_tile, start_facing, towards, radius);
-//     tracks
-// }
-
-fn octant_to_unit(octant: i32) -> Vec2 {
+fn octant_to_unit(octant: Orientation) -> Vec2 {
     let angle = octant_to_angle(octant);
     angle_to_unit(angle)
 }
 
-fn octant_to_angle(octant: i32) -> f32 {
+fn octant_to_angle(octant: Orientation) -> f32 {
     octant as f32 * PI / 4.
 }
 
@@ -251,172 +36,288 @@ fn angle_to_unit(angle: f32) -> Vec2 {
     Vec2::new(f32::sin(angle), f32::cos(angle))
 }
 
-// fn vec_to_octant(vec: Vec2) -> i32 {
-//     let angle = vec.angle_between(Vec2::Y) + PI / 8.;
-//     let abs_angle = (angle + 2. * PI) % (2. * PI);
-//     let octant = abs_angle / (PI / 4.);
-//     octant as i32
-// }
-
-// fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TilePos, Orientation)) {
-//     let (start_tile, start_octant) = start;
-//     let (end_tile, end_octant) = end;
-
-//     let start_pos = tile_to_center_pos(start_tile);
-//     let end_pos = tile_to_center_pos(end_tile);
-
-//     let ctrl_mag = start_pos.distance(end_pos) / 3.;
-//     path.move_to(start_pos);
-
-//     let ctrl_one = octant_to_unit(start_octant) * ctrl_mag;
-//     let ctrl_two = octant_to_unit(end_octant + 4) * ctrl_mag;
-//     path.cubic_bezier_to(start_pos + ctrl_one, end_pos + ctrl_two, end_pos);
-// }
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TrackParams {
     radius: f32,
-    divisor: f32,
 }
 
-fn in_direction(start: TilePos, facing: Orientation, end: TilePos) -> bool {
+fn in_direction(start: Vec2, facing: Orientation, end: Vec2) -> bool {
     let dir = octant_to_unit(facing);
-    Vec2::new((end.0 - start.0) as f32, (end.1 - start.1) as f32)
-        .normalize_or_zero()
-        .abs_diff_eq(dir, 0.01)
-}
-
-fn rotate_vec(vec: Vec2, angle: f32) -> Vec2 {
-    Vec2::new(
-        vec.x * angle.cos() - vec.y * angle.sin(),
-        vec.x * angle.sin() + vec.y * angle.cos(),
-    )
+    (end - start).normalize_or_zero().abs_diff_eq(dir, 0.01)
 }
 
 impl TrackParams {
-    fn base_turn(&self) -> TilePos {
-        let center = Vec2::new(self.radius, 0.);
-        let offset = angle_to_unit(-PI / 4.) * self.radius;
-        world_pos_to_tile(offset + center)
-    }
-
-    fn base_turn_vec(&self) -> Vec2 {
-        let turn = self.base_turn();
-        Vec2::new(turn.0 as f32 * TILE_SIZE, turn.1 as f32 * TILE_SIZE)
-    }
-
-    fn turn(&self, start: Vec2, facing: Orientation, direction: f32) -> TilePos {
-        let mut vec = self.base_turn_vec();
-        if direction < 0. {
-            vec.x = -vec.x;
-        }
-        let vec = rotate_vec(vec, -octant_to_angle(facing));
-        println!("{:?}, {:?}, {:?}", start, facing, vec);
-        world_pos_to_tile(start + vec)
+    fn get_turn(&self, facing: Orientation, dir: f32) -> Vec2 {
+        let dir = -dir.signum();
+        let unit = octant_to_unit(facing);
+        let center = unit.perp() * self.radius * dir;
+        let offset = octant_to_unit(facing + dir as Orientation) * self.radius;
+        (offset + center).round()
     }
 
     fn place_tracks(
         &self,
-        start: (TilePos, Orientation),
-        end_tile: TilePos,
+        start_tile: TilePos,
+        start_facing: Orientation,
+        target_tile: TilePos,
+        allow_bends: bool,
     ) -> Vec<(TilePos, Orientation)> {
         let mut tracks = Vec::new();
-
-        let (start_tile, start_facing) = start;
         tracks.push((start_tile, start_facing));
 
-        let start_vec = octant_to_unit(start_facing);
-        let start_pos = tile_to_center_pos(start_tile);
-
-        let end_pos = tile_to_center_pos(end_tile);
-        let end_vec = end_pos - start_pos;
-        let angle = end_vec.angle_between(start_vec);
+        let start_vec = start_tile.as_vec2();
+        let target_vec = target_tile.as_vec2();
 
         // Simple case straight
-        if in_direction(start_tile, start_facing, end_tile) {
-            tracks.push((end_tile, start_facing));
+        if in_direction(start_vec, start_facing, target_vec) {
+            tracks.push((target_tile, start_facing));
+            return tracks;
         }
-        // Simple case s bend
-        else if angle.abs() <= PI / self.divisor && end_vec.length() <= self.radius {
-            tracks.push((end_tile, start_facing));
-        // Straight until bend would face target
-        } else {
-            let turn = self.base_turn();
-            let upto = end_vec.project_onto_normalized(start_vec);
-            let dist = upto.distance(end_vec);
-            // Height of curve + height gained on diagonal to target
-            let turn_height = turn.1 as f32 * TILE_SIZE + dist / octant_to_angle(1).tan();
-            let mut turn_from = start_pos;
 
-            if upto.length() > turn_height && upto.dot(start_vec) > 0. {
-                let upto = upto - upto.normalize() * turn_height;
-                turn_from = start_pos + upto;
-                tracks.push((world_pos_to_tile(turn_from), start_facing));
+        let start_unit = octant_to_unit(start_facing);
+        let tile_vec = target_vec - start_vec;
+        let tile_angle = tile_vec.angle_between(start_unit);
+
+        let turn_vec = self.get_turn(start_facing, tile_angle);
+        let turn_angle = start_unit.angle_between(turn_vec);
+        let abs_turn_angle = turn_angle.abs();
+
+        // Calculate bend along the vector projected by the turn
+        let projected_tile = tile_vec.project_onto_normalized(start_unit.perp());
+        let projected_turn = turn_vec.project_onto_normalized(start_unit.perp());
+        let ratio = projected_tile.length() / projected_turn.length();
+        let bend = (ratio * turn_vec).round();
+
+        let straight_vec = (tile_vec - bend).round();
+        let straight_tile = straight_vec.round().as_ivec2();
+        let can_bend =
+            allow_bends && (straight_tile == IVec2::ZERO || straight_vec.dot(start_unit) > 0.);
+
+        // Bend, don't allow if could be replaced by two turns or if too sharp
+        if can_bend && bend.length_squared() <= (turn_vec * 2.).length_squared() {
+            let straight_vec = (tile_vec - bend).round().as_ivec2();
+            if straight_vec != IVec2::ZERO {
+                tracks.push((start_tile + straight_vec, start_facing));
             }
+            tracks.push((start_tile + straight_vec + bend.as_ivec2(), start_facing));
+            // Straight until turn would face target
+        } else {
+            // Project onto start_vec instead of perp
+            let projected_tile = tile_vec.project_onto_normalized(start_unit);
+            let projected_dist = projected_tile.distance(tile_vec);
 
-            let turn_end = self.turn(turn_from, start_facing, angle.signum());
-            let target_facing = start_facing + angle.signum() as i32;
-            tracks.push((turn_end, target_facing));
+            let turn_length = turn_vec.length();
+
+            let straight_length = projected_tile.length() - projected_dist;
+            // let straight_vec = start_unit * straight_length;
+            // let diag_length = straight_vec.distance(tile_vec);
+
+            let turn_straight_length =
+                turn_length * (PI / 4. - abs_turn_angle).sin() / (0.75 * PI).sin();
+            let straight_length = straight_length - turn_straight_length;
+
+            // let target_unit = octant_to_unit(target_facing);
+            // let turn_diag_length = turn_length * abs_turn_angle.sin() / (0.75 * PI).sin();
+            // let diag_length = diag_length - turn_diag_length;
+            // let diag_vec = target_unit * diag_length;
+
+            let straight_vec = start_unit * straight_length;
+            let straight_tile = straight_vec.round().as_ivec2();
+
+            let turn_tile = turn_vec.as_ivec2();
+            let target_facing = start_facing + tile_angle.signum() as Orientation;
+
+            if straight_tile == IVec2::ZERO || straight_vec.dot(start_unit) < 0. {
+                tracks.push((start_tile + turn_tile, target_facing));
+            } else {
+                tracks.push((start_tile + straight_tile, start_facing));
+                tracks.push((start_tile + straight_tile + turn_tile, target_facing));
+            };
         }
 
         tracks
     }
 }
 
-pub fn setup_placement(mut commands: Commands) {
-    let params = TrackParams {
-        radius: 240.,
-        divisor: 5.8,
-    };
-    let set = TrackSet::new(params);
-    println!("{:?}", set);
+#[derive(Component)]
+pub struct Arrow;
 
-    commands.insert_resource(set);
-    commands.insert_resource(params)
+#[derive(Component)]
+pub struct ArrowHighlighter {
+    arrows: [Entity; 8],
+}
+
+impl ArrowHighlighter {
+    const HEIGHT: f32 = 10.;
+    const HIGHLIGHT_COLOR: Color = Color::GRAY;
+    const NORMAL_COLOR: Color = Color::DARK_GRAY;
+
+    fn spawn(commands: &mut Commands) {
+        let mut children = [Entity::from_bits(0); 8];
+        commands
+            .spawn_bundle(SpatialBundle {
+                visibility: Visibility { is_visible: false },
+                ..default()
+            })
+            .with_children(|parent| {
+                let triangle = shapes::RegularPolygon {
+                    sides: 3,
+                    feature: shapes::RegularPolygonFeature::SideLength(TILE_SIZE / 2.),
+                    ..shapes::RegularPolygon::default()
+                };
+
+                for i in 0..8 {
+                    let unit = octant_to_unit(i) * TILE_SIZE;
+                    let angle = octant_to_angle(i);
+
+                    let id = parent
+                        .spawn_bundle(GeometryBuilder::build_as(
+                            &triangle,
+                            DrawMode::Fill(FillMode::color(Color::GRAY)),
+                            Transform::from_xyz(unit.x, unit.y, Self::HEIGHT)
+                                .with_rotation(Quat::from_rotation_z(-angle)),
+                        ))
+                        .insert(Arrow)
+                        .id();
+
+                    children[i as usize] = id;
+                }
+            })
+            .insert(ArrowHighlighter { arrows: children });
+    }
+}
+
+impl Index<usize> for ArrowHighlighter {
+    type Output = Entity;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.arrows[index]
+    }
+}
+
+pub fn setup_placement(mut commands: Commands) {
+    let params = TrackParams { radius: 6. };
+
+    commands.insert_resource(params);
+    ArrowHighlighter::spawn(&mut commands);
+}
+
+fn build_path(path: PathBuilder, color: Color, width: f32, z: f32) -> ShapeBundle {
+    GeometryBuilder::build_as(
+        &path.build(),
+        DrawMode::Stroke(StrokeMode {
+            options: StrokeOptions::default()
+                .with_line_cap(LineCap::Round)
+                .with_line_width(width),
+            color,
+        }),
+        Transform::from_xyz(0., 0., z),
+    )
 }
 
 pub fn placement(
-    mut facing: Local<Orientation>,
     mut commands: Commands,
-    mut start: ResMut<PlacementStart>,
-    tracks: Res<TrackSet>,
+    mut placement: ResMut<PlacementState>,
+    mut arrow_highlighter: Query<
+        (&mut Transform, &mut Visibility, &ArrowHighlighter),
+        Without<Arrow>,
+    >,
+    mut arrows: Query<(&mut Visibility, &mut DrawMode), With<Arrow>>,
+
     params: Res<TrackParams>,
     mouse_pos: Res<MousePos>,
     mouse_buttons: Res<Input<MouseButton>>,
+    keys: Res<Input<KeyCode>>,
     ghosts: Query<Entity, With<PlacementGhost>>,
 ) {
-    if mouse_buttons.just_pressed(MouseButton::Middle) {
-        *facing = *facing + 1;
-    }
+    let allow_bends = keys.any_pressed([KeyCode::LShift, KeyCode::RShift]);
+    let (mut arrows_tf, mut arrows_vis, arrow_highlighter) = arrow_highlighter.single_mut();
+
     ghosts.for_each(|e| commands.entity(e).despawn());
     if let Some(mouse_pos) = mouse_pos.0 {
-        let mouse_tile = world_pos_to_tile(mouse_pos);
-        if let None = start.0 && mouse_buttons.just_pressed(MouseButton::Left) {
-            start.0 = Some(mouse_tile);
-        } else if let Some(start_tile) = start.0 {
-            // let mut path = PathBuilder::new();
-            // tracks.draw(&mut path);
-            // let bundle = GeometryBuilder::build_as(
-            //     &path.build(),
-            //     DrawMode::Stroke(StrokeMode::new(Color::rgba(0.5, 0.5, 0.5, 0.5), 4.)),
-            //     Transform::default(),
-            // );
-            // commands.spawn_bundle(bundle).insert(PlacementGhost);
-
-            let mut path = PathBuilder::new();
-            let tracks = params.place_tracks((start_tile, *facing), mouse_tile);
-            for pair in tracks.windows(2) {
-                track_path(&mut path, pair[0], pair[1]);
-            }
-            let bundle = GeometryBuilder::build_as(
-                &path.build(),
-                DrawMode::Stroke(StrokeMode::new(Color::WHITE, 6.)),
-                Transform::default(),
-            );
-            commands.spawn_bundle(bundle).insert(PlacementGhost);
+        if mouse_buttons.just_pressed(MouseButton::Right) {
+            placement.start = None;
+            placement.facing = None;
         }
+
+        let mouse_tile = world_pos_to_tile(mouse_pos);
+        match (placement.start, placement.facing) {
+            (None, _) => {
+                if mouse_buttons.just_pressed(MouseButton::Left) {
+                    placement.start = Some(mouse_tile);
+
+                    // TODO
+                    placement.facing_options = [true; 8];
+
+                    let tile_pos = tile_to_center_pos(mouse_tile);
+                    arrows_tf.translation.x = tile_pos.x;
+                    arrows_tf.translation.y = tile_pos.y;
+                    arrows_vis.is_visible = true;
+                }
+            }
+            (Some(start_tile), None) => {
+                let start_pos = tile_to_center_pos(start_tile);
+                let mouse_vec = mouse_pos - start_pos;
+
+                // Get closest direction to mouse_angle
+                let (best, _) = placement.facing_options.iter().enumerate().fold(
+                    (0, f32::INFINITY),
+                    |(best, to_beat), (index, flag)| {
+                        let unit = octant_to_unit(index as Orientation);
+                        let diff = mouse_vec.normalize_or_zero().distance_squared(unit);
+                        if *flag && diff < to_beat {
+                            (index, diff)
+                        } else {
+                            (best, to_beat)
+                        }
+                    },
+                );
+
+                let arrows = arrows
+                    .get_many_mut(arrow_highlighter.arrows)
+                    .expect("Highlighter arrow entities missing");
+
+                arrows.into_iter().enumerate().for_each(|(i, arrow)| {
+                    let (mut vis, mut dm) = arrow;
+                    vis.is_visible = placement.facing_options[i];
+                    if let DrawMode::Fill(FillMode { color, .. }) = dm.as_mut() {
+                        *color = if best == i {
+                            ArrowHighlighter::HIGHLIGHT_COLOR
+                        } else {
+                            ArrowHighlighter::NORMAL_COLOR
+                        }
+                    }
+                });
+
+                if mouse_buttons.just_pressed(MouseButton::Left) {
+                    placement.facing = Some(best as Orientation);
+                    arrows_vis.is_visible = false;
+                }
+            }
+            (Some(start_tile), Some(facing)) => {
+                let mut path = PathBuilder::new();
+                let tracks = params.place_tracks(start_tile, facing, mouse_tile, allow_bends);
+                for pair in tracks.windows(2) {
+                    track_path(&mut path, pair[0], pair[1]);
+                }
+                commands
+                    .spawn_bundle(build_path(path, Color::GRAY, 4., 0.1))
+                    .insert(PlacementGhost);
+
+                if mouse_buttons.just_pressed(MouseButton::Left) {
+                    let mut path = PathBuilder::new();
+                    track_path(&mut path, tracks[0], tracks[1]);
+                    commands.spawn_bundle(build_path(path, Color::WHITE, 8., 0.4));
+
+                    placement.start = Some(tracks[1].0);
+                    placement.facing = Some(tracks[1].1);
+                }
+            }
+        };
     }
 }
+
+const HASH_LENGTH: f32 = 15.;
 
 fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TilePos, Orientation)) {
     let (start_tile, start_facing) = start;
@@ -424,8 +325,12 @@ fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TileP
     let start_pos = tile_to_center_pos(start_tile);
     let end_pos = tile_to_center_pos(end_tile);
 
-    path.move_to(start_pos);
+    let hash_vec = octant_to_unit(start_facing + 2);
 
+    path.move_to(start_pos - hash_vec * HASH_LENGTH);
+    path.line_to(start_pos + hash_vec * HASH_LENGTH);
+
+    path.move_to(start_pos);
     let ctrl_mag = start_pos.distance(end_pos) / 3.;
     let start_ctrl = octant_to_unit(start_facing);
     let end_ctrl = octant_to_unit(end_facing + 4);
@@ -436,26 +341,8 @@ fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TileP
     );
 }
 
-fn track_placement(
-    tracks: &TrackSet,
-    start_tile: TilePos,
-    octant: Orientation,
-    mouse_tile: TilePos,
-) -> Vec<(TilePos, Orientation)> {
-    todo!()
-}
-
-pub fn track_control(
-    mut ctx: ResMut<EguiContext>,
-    mut tracks: ResMut<TrackSet>,
-    mut params: ResMut<TrackParams>,
-) {
+pub fn track_control(mut ctx: ResMut<EguiContext>, mut params: ResMut<TrackParams>) {
     egui::Window::new("Tracks").show(ctx.ctx_mut(), |ui| {
-        ui.add(egui::Slider::new(&mut params.radius, 100.0..=1000.0).text("Radius"));
-        ui.add(egui::Slider::new(&mut params.divisor, 1.0..=12.0).text("Angle"));
+        ui.add(egui::Slider::new(&mut params.radius, 1.0..=20.0).text("Radius"));
     });
-
-    if *params != tracks.params {
-        *tracks = TrackSet::new(*params);
-    }
 }
