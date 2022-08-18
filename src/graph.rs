@@ -15,12 +15,12 @@ pub fn setup_network(mut commands: Commands) {
     commands
         .spawn()
         .insert(Network {
-            track_graph: UnGraphMap::from_edges(&[
-                ((5, 5), (5, 7)),
-                ((5, 7), (7, 7)),
-                ((5, 7), (3, 7)),
-                ((7, 7), (8, 8)),
-            ]),
+            track_graph: UnGraphMap::<TileIndex, ()>::default(), //::from_edges(&[
+                                                                 // ((5, 5), (5, 7)),
+                                                                 // ((5, 7), (7, 7)),
+                                                                 // ((5, 7), (3, 7)),
+                                                                 // ((7, 7), (8, 8)),
+                                                                 //]),
         })
         .insert_bundle(ShapeBundle {
             mode: DrawMode::Stroke(StrokeMode {

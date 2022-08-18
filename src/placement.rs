@@ -344,5 +344,12 @@ fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TileP
 pub fn track_control(mut ctx: ResMut<EguiContext>, mut params: ResMut<TrackParams>) {
     egui::Window::new("Tracks").show(ctx.ctx_mut(), |ui| {
         ui.add(egui::Slider::new(&mut params.radius, 2.5..=20.0).text("Radius"));
+        ui.add_space(4.0);
+        ui.label("Left-click to build tracks.");
+        ui.label("Right-click to cancel.");
+        ui.label("Hold Shift to allow S-bends.");
+        ui.label("Left-click to build tracks.");
+        ui.label("Scroll to zoom.");
+        ui.label("Middle mouse to pan.");
     });
 }
