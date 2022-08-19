@@ -42,6 +42,11 @@ pub enum ControlState {
     PlacingTrains,
 }
 
+#[derive(SystemLabel)]
+pub enum SystemLabels {
+    MouseToWorld,
+}
+
 pub fn app() -> App {
     let mut app = App::new();
     app.insert_resource(WindowDescriptor {
@@ -71,14 +76,14 @@ pub fn app() -> App {
     .add_exit_system(ControlState::PlacingTrains, cleanup_train_placement)
     .add_system(camera_pan.before(mouse_to_world))
     .add_system(camera_zoom.before(mouse_to_world))
-    .add_system(mouse_to_world)
+    .add_system(mouse_to_world.label(SystemLabels::MouseToWorld))
     .add_system(control_ui)
     .add_system(place_tracks)
     .add_system(extract_network_to_mesh.after(place_tracks))
     .add_system(highlight.after(mouse_to_world))
     .add_system_set(
         ConditionSet::new()
-            .after(mouse_to_world)
+            .after(SystemLabels::MouseToWorld)
             .run_in_state(ControlState::PlacingTracks)
             .with_system(track_placement_tool)
             .with_system(remove_tracks)
@@ -86,7 +91,7 @@ pub fn app() -> App {
     )
     .add_system_set(
         ConditionSet::new()
-            .after(mouse_to_world)
+            .after(SystemLabels::MouseToWorld)
             .run_in_state(ControlState::PlacingTrains)
             .with_system(train_placement_tool)
             .into(),
