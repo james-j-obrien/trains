@@ -1,64 +1,63 @@
 use std::{f32::consts::PI, ops::Index};
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContext};
-use bevy_mod_picking::{HoverEvent, PickableBundle, PickingEvent};
-use bevy_prototype_lyon::entity::ShapeBundle;
+use bevy_mod_picking::{HoverEvent, PickingEvent};
 
 use super::*;
 
 #[derive(Component)]
-pub struct PlacementGhost;
-
-// Octant orientation, 0 is north
-type Orientation = i8;
+pub struct TrackGhost;
 
 #[derive(Default)]
 pub struct PlacementState {
-    start: Option<TilePos>,
+    start: Option<TileIndex>,
     facing_options: [bool; 8],
-    facing: Option<Orientation>,
-}
-
-fn octant_to_unit(octant: Orientation) -> Vec2 {
-    let angle = octant_to_angle(octant);
-    angle_to_unit(angle)
-}
-
-fn octant_to_angle(octant: Orientation) -> f32 {
-    octant as f32 * PI / 4.
-}
-
-fn angle_to_unit(angle: f32) -> Vec2 {
-    Vec2::new(f32::sin(angle), f32::cos(angle))
+    facing: Option<Octant>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TrackParams {
-    radius: f32,
+    pub radius: f32,
 }
 
-fn in_direction(start: Vec2, facing: Orientation, end: Vec2) -> bool {
+fn in_direction(start: Vec2, facing: Octant, end: Vec2) -> bool {
     let dir = octant_to_unit(facing);
     (end - start).normalize_or_zero().abs_diff_eq(dir, 0.01)
 }
 
 impl TrackParams {
-    fn get_turn(&self, facing: Orientation, dir: f32) -> Vec2 {
+    fn get_turn(&self, facing: Octant, dir: f32) -> Vec2 {
         let dir = -dir.signum();
         let unit = octant_to_unit(facing);
         let center = unit.perp() * self.radius * dir;
-        let offset = octant_to_unit(facing + dir as Orientation) * self.radius;
+        let offset = octant_to_unit(facing + dir.into()) * self.radius;
         (offset + center).round()
     }
 
     fn place_tracks(
         &self,
-        start_tile: TilePos,
-        start_facing: Orientation,
-        target_tile: TilePos,
+        start_tile: TileIndex,
+        start_facing: Octant,
+        target_tile: TileIndex,
         allow_bends: bool,
-    ) -> Vec<(TilePos, Orientation)> {
+    ) -> Vec<TrackPos> {
+        let tracks = self.place_vec_tracks(
+            tile_to_vec(start_tile),
+            start_facing,
+            tile_to_vec(target_tile),
+            allow_bends,
+        );
+        let tracks: Vec<TrackPos> = tracks.into_iter().map(|t| t.into()).collect();
+        tracks
+    }
+
+    fn place_vec_tracks(
+        &self,
+        start_tile: TileVec,
+        start_facing: Octant,
+        target_tile: TileVec,
+        allow_bends: bool,
+    ) -> Vec<(TileVec, Octant)> {
         let mut tracks = Vec::new();
         tracks.push((start_tile, start_facing));
 
@@ -122,7 +121,7 @@ impl TrackParams {
             let straight_tile = straight_vec.round().as_ivec2();
 
             let turn_tile = turn_vec.as_ivec2();
-            let target_facing = start_facing + tile_angle.signum() as Orientation;
+            let target_facing = start_facing + tile_angle.signum().into();
 
             if straight_tile == IVec2::ZERO
                 || straight_length < 0.
@@ -151,7 +150,7 @@ pub struct ArrowHighlighter {
 }
 
 impl ArrowHighlighter {
-    const HEIGHT: f32 = 10.;
+    const HEIGHT: f32 = 100.;
     const HIGHLIGHT_COLOR: Color = Color::GRAY;
     const NORMAL_COLOR: Color = Color::DARK_GRAY;
 
@@ -198,27 +197,14 @@ impl Index<usize> for ArrowHighlighter {
     }
 }
 
-pub fn setup_placement(mut commands: Commands) {
+pub fn setup_track_placement(mut commands: Commands) {
     let params = TrackParams { radius: 6. };
 
     commands.insert_resource(params);
     ArrowHighlighter::spawn(&mut commands);
 }
 
-fn build_path(path: PathBuilder, color: Color, width: f32, z: f32) -> ShapeBundle {
-    GeometryBuilder::build_as(
-        &path.build(),
-        DrawMode::Stroke(StrokeMode {
-            options: StrokeOptions::default()
-                .with_line_cap(LineCap::Round)
-                .with_line_width(width),
-            color,
-        }),
-        Transform::from_xyz(0., 0., z),
-    )
-}
-
-pub fn placement(
+pub fn track_placement_tool(
     mut commands: Commands,
     mut placement: ResMut<PlacementState>,
     mut arrow_highlighter: Query<
@@ -226,14 +212,16 @@ pub fn placement(
         Without<Arrow>,
     >,
     mut arrows: Query<(&mut Visibility, &mut DrawMode), With<Arrow>>,
+    mut events: EventWriter<TrackPlacementEvent>,
 
+    network: Res<Network>,
     params: Res<TrackParams>,
     mouse_pos: Res<MousePos>,
     mouse_buttons: Res<Input<MouseButton>>,
     keys: Res<Input<KeyCode>>,
-    ghosts: Query<Entity, With<PlacementGhost>>,
+    ghosts: Query<Entity, With<TrackGhost>>,
 ) {
-    let allow_bends = keys.any_pressed([KeyCode::LShift, KeyCode::RShift]);
+    let shift = keys.any_pressed([KeyCode::LShift, KeyCode::RShift]);
     let (mut arrows_tf, mut arrows_vis, arrow_highlighter) = arrow_highlighter.single_mut();
 
     ghosts.for_each(|e| commands.entity(e).despawn());
@@ -244,30 +232,35 @@ pub fn placement(
             arrows_vis.is_visible = false;
         }
 
-        let mouse_tile = world_pos_to_tile(mouse_pos);
+        let mouse_tile = pos_to_tile(mouse_pos);
         match (placement.start, placement.facing) {
             (None, _) => {
                 if mouse_buttons.just_pressed(MouseButton::Left) {
                     placement.start = Some(mouse_tile);
 
-                    // TODO
-                    placement.facing_options = [true; 8];
+                    if shift {
+                        placement.facing_options = [true; 8];
+                    } else {
+                        placement.facing_options = network.get_connections(mouse_tile);
+                        if placement.facing_options.iter().all(|b| !b) {
+                            placement.facing_options = [true; 8];
+                        }
+                    }
 
-                    let tile_pos = tile_to_center_pos(mouse_tile);
+                    let tile_pos = tile_to_center(mouse_tile);
                     arrows_tf.translation.x = tile_pos.x;
                     arrows_tf.translation.y = tile_pos.y;
-                    arrows_vis.is_visible = true;
                 }
             }
             (Some(start_tile), None) => {
-                let start_pos = tile_to_center_pos(start_tile);
+                let start_pos = tile_to_center(start_tile);
                 let mouse_vec = mouse_pos - start_pos;
 
                 // Get closest direction to mouse_angle
                 let (best, _) = placement.facing_options.iter().enumerate().fold(
                     (0, f32::INFINITY),
                     |(best, to_beat), (index, flag)| {
-                        let unit = octant_to_unit(index as Orientation);
+                        let unit = octant_to_unit(index);
                         let diff = mouse_vec.normalize_or_zero().distance_squared(unit);
                         if *flag && diff < to_beat {
                             (index, diff)
@@ -292,73 +285,36 @@ pub fn placement(
                         }
                     }
                 });
+                arrows_vis.is_visible = true;
 
                 if mouse_buttons.just_pressed(MouseButton::Left) {
-                    placement.facing = Some(best as Orientation);
+                    placement.facing = Some(best.into());
                     arrows_vis.is_visible = false;
                 }
             }
             (Some(start_tile), Some(facing)) => {
                 let mut path = PathBuilder::new();
-                let tracks = params.place_tracks(start_tile, facing, mouse_tile, allow_bends);
-                for pair in tracks.windows(2) {
-                    track_path(&mut path, pair[0], pair[1]);
+                let tracks = params.place_tracks(start_tile, facing, mouse_tile, shift);
+                let segments: Vec<TrackSegment> = tracks
+                    .windows(2)
+                    .map(|pair| TrackSegment::from_directed(pair[0], pair[1]))
+                    .collect();
+                for segment in segments.iter() {
+                    track_path(&mut path, segment);
                 }
                 commands
                     .spawn_bundle(build_path(path, Color::GRAY, 4., 0.1))
-                    .insert(PlacementGhost);
+                    .insert(TrackGhost);
 
                 if mouse_buttons.just_pressed(MouseButton::Left) {
-                    let mut path = PathBuilder::new();
-                    track_path(&mut path, tracks[0], tracks[1]);
-                    commands
-                        .spawn_bundle(build_path(path, Color::WHITE, 8., 0.4))
-                        .insert_bundle(PickableBundle::default())
-                        .insert(Track);
+                    placement.start = Some(tracks[1].tile);
+                    placement.facing = Some(tracks[1].facing);
 
-                    placement.start = Some(tracks[1].0);
-                    placement.facing = Some(tracks[1].1);
+                    events.send(TrackPlacementEvent(segments[0]));
                 }
             }
         };
     }
-}
-
-const HASH_LENGTH: f32 = 15.;
-
-fn track_path(path: &mut PathBuilder, start: (TilePos, Orientation), end: (TilePos, Orientation)) {
-    let (start_tile, start_facing) = start;
-    let (end_tile, end_facing) = end;
-    let start_pos = tile_to_center_pos(start_tile);
-    let end_pos = tile_to_center_pos(end_tile);
-
-    let hash_vec = octant_to_unit(start_facing + 2);
-
-    path.move_to(start_pos - hash_vec * HASH_LENGTH);
-    path.line_to(start_pos + hash_vec * HASH_LENGTH);
-
-    path.move_to(start_pos);
-    let ctrl_mag = start_pos.distance(end_pos) / 3.;
-    let start_ctrl = octant_to_unit(start_facing);
-    let end_ctrl = octant_to_unit(end_facing + 4);
-    path.cubic_bezier_to(
-        start_pos + start_ctrl * ctrl_mag,
-        end_pos + end_ctrl * ctrl_mag,
-        end_pos,
-    );
-}
-
-pub fn track_control(mut ctx: ResMut<EguiContext>, mut params: ResMut<TrackParams>) {
-    egui::Window::new("Tracks").show(ctx.ctx_mut(), |ui| {
-        ui.add(egui::Slider::new(&mut params.radius, 2.5..=20.0).text("Radius"));
-        ui.add_space(4.0);
-        ui.label("Left-click to build tracks.");
-        ui.label("Right-click to cancel and erase.");
-        ui.label("Hold Shift to allow S-bends.");
-        ui.label("Left-click to build tracks.");
-        ui.label("Scroll to zoom.");
-        ui.label("Middle mouse to pan.");
-    });
 }
 
 pub fn remove_tracks(
@@ -374,4 +330,16 @@ pub fn remove_tracks(
             }
         }
     }
+}
+
+pub fn cleanup_track_placement(
+    mut commands: Commands,
+    ghosts: Query<Entity, With<TrackGhost>>,
+    mut placement: ResMut<PlacementState>,
+    mut arrow_highlighter: Query<&mut Visibility, With<ArrowHighlighter>>,
+) {
+    arrow_highlighter.single_mut().is_visible = false;
+    ghosts.for_each(|g| commands.entity(g).despawn());
+    placement.facing = None;
+    placement.start = None;
 }
