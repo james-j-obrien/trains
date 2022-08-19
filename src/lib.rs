@@ -180,7 +180,7 @@ pub fn control_ui(
         ui.label("Middle mouse to pan.");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let mut mut_state = state.0.clone();
+            let mut mut_state = state.0;
             ui.selectable_value(&mut mut_state, ControlState::None, "None");
             ui.selectable_value(&mut mut_state, ControlState::PlacingTracks, "Tracks");
             ui.selectable_value(&mut mut_state, ControlState::PlacingTrains, "Trains");

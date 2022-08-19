@@ -1,7 +1,6 @@
 use std::{f32::consts::PI, ops::Index};
 
 use bevy::prelude::*;
-use bevy_mod_picking::{HoverEvent, PickingEvent};
 
 use super::*;
 

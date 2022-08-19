@@ -52,12 +52,12 @@ pub struct Network {
 impl Network {
     pub fn get_connections(&self, tile: TileIndex) -> [bool; 8] {
         let mut exists = [false; 8];
-        for o in 0..8 {
+        for (i, exists) in exists.iter_mut().enumerate() {
             let node = TrackPos {
-                facing: o.into(),
+                facing: i.into(),
                 tile,
             };
-            exists[o] = self.pathing_graph.contains_node(node);
+            *exists = self.pathing_graph.contains_node(node);
         }
         exists
     }

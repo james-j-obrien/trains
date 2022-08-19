@@ -27,10 +27,10 @@ fn project_onto_line(v: Point, w: Point, p: Point) -> Point {
     if dist == 0. {
         return v;
     }
-
     let t = ((p - v).dot(w - v) / dist).min(1.).max(0.);
-    let projection = v + (w - v).to_f32() * t;
-    projection
+
+    // Projection
+    v + (w - v).to_f32() * t
 }
 
 pub fn train_placement_tool(
@@ -68,11 +68,7 @@ pub fn train_placement_tool(
             _ => None,
         };
 
-        if let Some(t) = t {
-            Some(track.curve.sample(t))
-        } else {
-            None
-        }
+        t.map(|t| track.curve.sample(t))
     });
 
     let min = refined.min_by_key(|pos| FloatOrd(pos.distance_to(mouse_point)));
