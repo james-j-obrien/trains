@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use bevy::{prelude::*, render::camera::RenderTarget, window::PresentMode};
+use bevy::{prelude::*, render::camera::RenderTarget};
 use bevy_egui::EguiPlugin;
 use bevy_egui::{egui, EguiContext};
 
@@ -49,7 +49,6 @@ pub fn app() -> App {
         height: WINDOW_HEIGHT,
         width: WINDOW_WIDTH,
         canvas: Some("#bevy".to_string()),
-        present_mode: PresentMode::Mailbox,
         fit_canvas_to_parent: true,
         ..default()
     })

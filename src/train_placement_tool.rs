@@ -51,7 +51,7 @@ pub fn train_placement_tool(
         let line = track.curve.baseline();
         let projected = project_onto_line(line.from, line.to, mouse_point);
         let dist = mouse_point.distance_to(projected);
-        if dist < 200. {
+        if dist < 100. {
             Some((id, track, projected))
         } else {
             None
@@ -62,13 +62,21 @@ pub fn train_placement_tool(
         let y_point = track.curve.solve_t_for_y(projected.y);
 
         let t = match (x_point.first(), y_point.first()) {
-            (Some(x), Some(y)) => Some((x + y) / 2.),
-            (Some(x), None) => Some(*x),
-            (None, Some(y)) => Some(*y),
+            (Some(x), Some(y)) => {
+                let a = track.curve.sample(*x);
+                let b = track.curve.sample(*y);
+                if a.distance_to(mouse_point) < b.distance_to(mouse_point) {
+                    Some(a)
+                } else {
+                    Some(b)
+                }
+            }
+            (Some(x), None) => Some(track.curve.sample(*x)),
+            (None, Some(y)) => Some(track.curve.sample(*y)),
             _ => None,
         };
 
-        t.map(|t| track.curve.sample(t))
+        t
     });
 
     let min = refined.min_by_key(|pos| FloatOrd(pos.distance_to(mouse_point)));
