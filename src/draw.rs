@@ -1,3 +1,4 @@
+use bevy_mod_picking::PickableBundle;
 use bevy_prototype_lyon::entity::ShapeBundle;
 
 use super::*;
@@ -8,6 +9,7 @@ pub fn draw_track(commands: &mut Commands, id: TrackID, track: &TrackSegment) {
 
     commands
         .spawn_bundle(build_path(path_builder, Color::WHITE, 8., 10.))
+        .insert_bundle(PickableBundle::default())
         .insert(NetworkTrack(id));
 }
 

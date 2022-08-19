@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::utils::HashSet;
+use bevy_mod_picking::{HoverEvent, PickingEvent};
 use bevy_prototype_lyon::prelude::tess::geom::{CubicBezierSegment, Point};
 use petgraph::prelude::DiGraphMap;
 use std::collections::HashMap;
@@ -59,6 +60,29 @@ impl Network {
             exists[o] = self.pathing_graph.contains_node(node);
         }
         exists
+    }
+
+    pub fn add_track(&mut self, segment: TrackSegment) -> TrackID {
+        let id = NEXT_TRACK_ID.fetch_add(1, Ordering::SeqCst);
+        self.pathing_graph
+            .add_edge(segment.start, segment.end.inverse(), id);
+        self.pathing_graph
+            .add_edge(segment.end, segment.start.inverse(), id);
+
+        self.tracks.insert(id, TrackData::from(segment));
+
+        id
+    }
+
+    pub fn remove_track(&mut self, id: TrackID) {
+        let track = self.tracks.remove(&id);
+        if let Some(track) = track {
+            let segment = track.segment;
+            self.pathing_graph
+                .remove_edge(segment.start, segment.end.inverse());
+            self.pathing_graph
+                .remove_edge(segment.end, segment.start.inverse());
+        }
     }
 }
 
@@ -121,20 +145,27 @@ pub fn place_tracks(
     mut render: EventWriter<NetworkRenderEvent>,
 ) {
     for TrackPlacementEvent(segment) in events.iter() {
-        let id = NEXT_TRACK_ID.fetch_add(1, Ordering::SeqCst);
-        network
-            .pathing_graph
-            .add_edge(segment.start, segment.end.inverse(), id);
-        network
-            .pathing_graph
-            .add_edge(segment.end, segment.start.inverse(), id);
-
-        network.tracks.insert(id, TrackData::from(*segment));
-        // network.track_graph.add_edge(
-        //     segment.start.tile,
-        //     segment.end.tile,
-        //     TrackEdge::from(segment),
-        // );
+        network.add_track(*segment);
         render.send(NetworkRenderEvent);
+    }
+}
+
+pub fn remove_tracks(
+    mut events: EventReader<PickingEvent>,
+    mut network: ResMut<Network>,
+    tracks: Query<&NetworkTrack>,
+    mouse_buttons: Res<Input<MouseButton>>,
+    mut render: EventWriter<NetworkRenderEvent>,
+) {
+    if !mouse_buttons.pressed(MouseButton::Right) {
+        return;
+    }
+    for event in events.iter() {
+        if let PickingEvent::Hover(HoverEvent::JustEntered(e)) = event {
+            if let Ok(track) = tracks.get(*e) {
+                network.remove_track(track.0);
+                render.send(NetworkRenderEvent);
+            }
+        }
     }
 }

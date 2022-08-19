@@ -74,7 +74,6 @@ pub fn app() -> App {
     .add_system(camera_zoom.before(mouse_to_world))
     .add_system(mouse_to_world)
     .add_system(control_ui)
-    .add_system(remove_tracks.after(mouse_to_world))
     .add_system(place_tracks)
     .add_system(extract_network_to_mesh.after(place_tracks))
     .add_system(highlight.after(mouse_to_world))
@@ -83,6 +82,7 @@ pub fn app() -> App {
             .after(mouse_to_world)
             .run_in_state(ControlState::PlacingTracks)
             .with_system(track_placement_tool)
+            .with_system(remove_tracks)
             .into(),
     )
     .add_system_set(

@@ -317,21 +317,6 @@ pub fn track_placement_tool(
     }
 }
 
-pub fn remove_tracks(
-    mut commands: Commands,
-    mut events: EventReader<PickingEvent>,
-    mouse_buttons: Res<Input<MouseButton>>,
-    tracks: Query<(), With<Track>>,
-) {
-    for event in events.iter() {
-        if let PickingEvent::Hover(HoverEvent::JustEntered(e)) = event {
-            if mouse_buttons.pressed(MouseButton::Right) && tracks.contains(*e) {
-                commands.entity(*e).despawn();
-            }
-        }
-    }
-}
-
 pub fn cleanup_track_placement(
     mut commands: Commands,
     ghosts: Query<Entity, With<TrackGhost>>,
