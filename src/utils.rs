@@ -10,11 +10,19 @@ pub struct Octant(pub i8);
 #[allow(dead_code)]
 impl Octant {
     pub fn left(&self) -> Self {
-        Self((self.0 - 1) % 8)
+        Self((self.0 + 7) % 8)
     }
 
     pub fn right(&self) -> Self {
         Self((self.0 + 1) % 8)
+    }
+
+    pub fn turn(&self, dir: f32) -> Self {
+        if dir < 0. {
+            self.left()
+        } else {
+            self.right()
+        }
     }
 
     pub fn inverse(&self) -> Self {

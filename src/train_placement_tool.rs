@@ -1,4 +1,5 @@
 use bevy::utils::FloatOrd;
+use bevy_mod_picking::{Hover, PickableBundle};
 use bevy_prototype_lyon::prelude::tess::{geom::CubicBezierSegment, math::Point};
 
 use super::*;
@@ -6,7 +7,7 @@ use super::*;
 #[derive(Component)]
 pub struct TrainGhost;
 
-pub fn draw_train(commands: &mut Commands, pos: Vec2, color: Color) {
+pub fn draw_train_ghost(commands: &mut Commands, pos: Vec2, color: Color) {
     let circle = shapes::Circle {
         radius: 16.,
         center: pos,
@@ -34,7 +35,7 @@ fn project_onto_line(v: Point, w: Point, p: Point) -> Point {
 }
 
 const ITERATIONS: i32 = 4;
-pub fn nearest_on_curve(curve: CubicBezierSegment<f32>, point: Point) -> Point {
+pub fn nearest_on_curve(curve: CubicBezierSegment<f32>, point: Point) -> f32 {
     let mut base = 0.5;
     for iteration in 0..ITERATIONS {
         let granularity = f32::powi(10., iteration + 1);
@@ -52,9 +53,8 @@ pub fn nearest_on_curve(curve: CubicBezierSegment<f32>, point: Point) -> Point {
         }
         base = best_base;
     }
-    let base = base.clamp(0.0, 1.0);
 
-    // Attempt to get more accurate via projection, very flaky
+    // Attempt to get more accurate via projection, very flaky, clamp first
     // let final_granularity = f32::powi(10., ITERATIONS);
     // let start = (base - final_granularity).clamp(0.0, 1.0);
     // let end = (base + final_granularity).clamp(0.0, 1.0);
@@ -72,7 +72,42 @@ pub fn nearest_on_curve(curve: CubicBezierSegment<f32>, point: Point) -> Point {
     //     curve.sample(base)
     // }
 
-    curve.sample(base)
+    base.clamp(0.0, 1.0)
+}
+
+// Returns track id, t, point, distance
+pub fn find_nearest_track(
+    network: &Network,
+    point: Point,
+    cutoff: f32,
+) -> Option<(TrackID, f32, Point, f32)> {
+    let filtered = network.tracks.iter().filter_map(|(id, track)| {
+        let line = track.curve.baseline();
+        let projected = project_onto_line(line.from, line.to, point);
+        let dist = point.distance_to(projected);
+        if dist < cutoff + 200. {
+            Some((*id, track))
+        } else {
+            None
+        }
+    });
+    let refined = filtered.filter_map(|(id, track)| {
+        let sample = nearest_on_curve(track.curve, point);
+        let nearest = track.curve.sample(sample);
+        let distance = point.distance_to(nearest);
+        if distance > cutoff {
+            None
+        } else {
+            Some((id, sample, nearest, distance))
+        }
+    });
+
+    refined.min_by_key(|(_, _, _, distance)| FloatOrd(*distance))
+}
+
+pub struct TrainPlacementEvent {
+    track: TrackID,
+    sample: f32,
 }
 
 pub fn train_placement_tool(
@@ -80,6 +115,8 @@ pub fn train_placement_tool(
     network: Res<Network>,
     mouse_pos: Res<MousePos>,
     train: Query<Entity, With<TrainGhost>>,
+    mouse_buttons: Res<Input<MouseButton>>,
+    mut writer: EventWriter<TrainPlacementEvent>,
 ) {
     train.for_each(|e| commands.entity(e).despawn());
     let mouse_pos = match mouse_pos.0 {
@@ -87,32 +124,213 @@ pub fn train_placement_tool(
         None => return,
     };
     let mouse_point = Point::new(mouse_pos.x, mouse_pos.y);
+    let nearest = find_nearest_track(network.as_ref(), mouse_point, 100.);
 
-    let filtered = network.tracks.iter().filter_map(|(id, track)| {
-        let line = track.curve.baseline();
-        let projected = project_onto_line(line.from, line.to, mouse_point);
-        let dist = mouse_point.distance_to(projected);
-        if dist < 200. {
-            Some((id, track))
-        } else {
-            None
-        }
-    });
-    let refined = filtered.map(|(_, track)| nearest_on_curve(track.curve, mouse_point));
-
-    let min = refined.min_by_key(|pos| FloatOrd(pos.distance_to(mouse_point)));
-
-    if let Some(point) = min {
-        if point.distance_to(mouse_point) < 100. {
-            draw_train(
-                &mut commands,
-                Vec2::new(point.x, point.y),
-                Color::rgba(0.0, 0.0, 1.0, 0.95),
-            );
+    if let Some((track, sample, point, _)) = nearest {
+        draw_train_ghost(
+            &mut commands,
+            Vec2::new(point.x, point.y),
+            Color::rgba(0.0, 0.0, 1.0, 0.95),
+        );
+        if mouse_buttons.just_pressed(MouseButton::Left) {
+            writer.send(TrainPlacementEvent { track, sample })
         }
     }
 }
 
 pub fn cleanup_train_placement(mut commands: Commands, ghosts: Query<Entity, With<TrainGhost>>) {
     ghosts.for_each(|g| commands.entity(g).despawn());
+}
+
+#[derive(Component)]
+pub struct Train {
+    track_edge: TrackEdge,
+    sample: f32,
+    speed: f32,
+}
+
+impl Train {
+    pub fn direction(&self) -> TrackDirection {
+        self.track_edge.direction
+    }
+
+    pub fn flip(&mut self) {
+        self.sample = 1. - self.sample;
+        self.track_edge.direction = self.track_edge.direction.inverse();
+        self.speed = -self.speed;
+    }
+}
+
+pub fn place_train(
+    mut commands: Commands,
+    mut events: EventReader<TrainPlacementEvent>,
+    network: Res<Network>,
+) {
+    for event in events.iter() {
+        let track = network.get(event.track);
+        if let Some(track) = track {
+            let point = track.curve.sample(event.sample);
+            let pos = Vec2::new(point.x, point.y);
+
+            let circle = shapes::Circle {
+                radius: 16.,
+                ..default()
+            };
+
+            commands
+                .spawn_bundle(GeometryBuilder::build_as(
+                    &circle,
+                    DrawMode::Fill(FillMode::color(Color::BLUE)),
+                    Transform::from_translation(pos.extend(20.)),
+                ))
+                .insert_bundle(PickableBundle::default())
+                .insert(Train {
+                    track_edge: TrackEdge::pos(event.track),
+                    sample: event.sample,
+                    speed: 0.,
+                })
+                .insert(Driving(TrackDirection::POS));
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct Driving(TrackDirection);
+
+fn move_along(track: &TrackData, train: &mut Train, amount: f32) -> f32 {
+    let scaled = amount / track.length;
+    let sample = (train.sample + scaled).clamp(0.0, 1.0);
+    let delta = (sample - train.sample) * track.length;
+
+    train.sample = sample;
+
+    delta
+}
+
+fn update_train<F>(
+    train: &mut Train,
+    tf: &mut Transform,
+    network: &Network,
+    delta: f32,
+    choose_track: F,
+) where
+    F: Fn(&[(&TrackEdge, &TrackData)]) -> usize,
+{
+    let data = network.get_data(train.track_edge);
+    if let Some(mut track_data) = data {
+        let mut speed = train.speed * delta;
+        while speed > 0. {
+            if train.sample >= 1.0 {
+                let node = track_data.get_pos(train.direction());
+                let nodes = network.get_exits(&node);
+
+                if !nodes.is_empty() {
+                    let (edge, next) = nodes[choose_track(&nodes[..])];
+                    train.sample = 0.;
+                    train.track_edge = *edge;
+                    track_data = next;
+                } else {
+                    train.speed = 0.
+                }
+            }
+
+            let delta = move_along(track_data, train, speed);
+            if delta == 0. {
+                break;
+            }
+            speed -= delta;
+        }
+
+        let point = if train.direction().is_pos() {
+            track_data.curve.sample(train.sample)
+        } else {
+            track_data.curve.sample(1. - train.sample)
+        };
+
+        tf.translation.x = point.x;
+        tf.translation.y = point.y;
+    }
+}
+
+const TRAIN_ACC: f32 = 200.;
+pub fn drive_trains(
+    time: Res<Time>,
+    keys: Res<Input<KeyCode>>,
+    network: Res<Network>,
+    mut trains: Query<(&mut Train, &mut Transform, &mut Driving)>,
+) {
+    trains.for_each_mut(|(mut train, mut tf, mut driving)| {
+        if keys.pressed(KeyCode::W) {
+            train.speed =
+                (train.speed + time.delta_seconds() * TRAIN_ACC * driving.0.signum()).min(300.);
+        }
+        if keys.pressed(KeyCode::S) {
+            train.speed =
+                (train.speed - time.delta_seconds() * TRAIN_ACC * driving.0.signum()).max(-300.);
+        }
+        if train.speed < 0. {
+            train.flip();
+            driving.0 = driving.0.inverse();
+        }
+
+        let track_data = network.get_data(train.track_edge);
+        let curr_direction = train.direction();
+        if let Some(track_data) = track_data {
+            let curr_end = track_data.get_pos(curr_direction);
+            let end_vec = IVec2::from(curr_end.tile).as_vec2();
+            update_train(
+                &mut train,
+                &mut tf,
+                network.as_ref(),
+                time.delta_seconds(),
+                |exits| {
+                    let end = track_data.get_pos(curr_direction);
+                    let mut facing = end.facing.inverse();
+
+                    let left = keys.pressed(KeyCode::A);
+                    let right = keys.pressed(KeyCode::D);
+
+                    if left {
+                        facing = facing.perp().inverse();
+                    }
+                    if right {
+                        facing = facing.perp();
+                    }
+
+                    if !driving.0.is_pos() && (left || right) {
+                        facing = facing.inverse();
+                    }
+
+                    let target_vec = octant_to_unit(facing);
+
+                    let (index, _) = exits
+                        .iter()
+                        .enumerate()
+                        .min_by_key(|(_, (edge, data))| {
+                            let tile_pos = data.get_pos(edge.direction);
+                            let tile_vec = IVec2::from(tile_pos.tile).as_vec2();
+                            let vec = tile_vec - end_vec;
+                            FloatOrd(vec.angle_between(target_vec).abs())
+                        })
+                        .unwrap();
+
+                    index
+                },
+            );
+        }
+    });
+}
+
+pub fn remove_trains(
+    mut commands: Commands,
+    trains: Query<(Entity, &Hover), With<Train>>,
+    mouse_buttons: Res<Input<MouseButton>>,
+) {
+    if mouse_buttons.pressed(MouseButton::Right) {
+        trains.for_each(|(e, h)| {
+            if h.hovered() {
+                commands.entity(e).despawn();
+            }
+        });
+    }
 }

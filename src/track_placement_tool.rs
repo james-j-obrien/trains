@@ -120,7 +120,7 @@ impl TrackParams {
             let straight_tile = straight_vec.round().as_ivec2();
 
             let turn_tile = turn_vec.as_ivec2();
-            let target_facing = start_facing + tile_angle.signum().into();
+            let target_facing = start_facing.turn(tile_angle);
 
             if straight_tile == IVec2::ZERO
                 || straight_length < 0.

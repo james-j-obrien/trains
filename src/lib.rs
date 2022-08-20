@@ -71,6 +71,7 @@ pub fn app() -> App {
     .insert_resource(MousePos(None))
     .insert_resource(PlacementState::default())
     .add_event::<TrackPlacementEvent>()
+    .add_event::<TrainPlacementEvent>()
     .add_event::<NetworkRenderEvent>()
     .add_exit_system(ControlState::PlacingTracks, cleanup_track_placement)
     .add_exit_system(ControlState::PlacingTrains, cleanup_train_placement)
@@ -79,6 +80,8 @@ pub fn app() -> App {
     .add_system(mouse_to_world.label(SystemLabels::MouseToWorld))
     .add_system(control_ui)
     .add_system(place_tracks)
+    .add_system(place_train)
+    .add_system(drive_trains)
     .add_system(extract_network_to_mesh.after(place_tracks))
     .add_system(highlight.after(mouse_to_world))
     .add_system_set(
@@ -94,6 +97,7 @@ pub fn app() -> App {
             .after(SystemLabels::MouseToWorld)
             .run_in_state(ControlState::PlacingTrains)
             .with_system(train_placement_tool)
+            .with_system(remove_trains)
             .into(),
     );
     app
@@ -174,15 +178,13 @@ pub fn control_ui(
     mut ctx: ResMut<EguiContext>,
     mut params: ResMut<TrackParams>,
 ) {
-    egui::Window::new("Tracks").show(ctx.ctx_mut(), |ui| {
-        ui.add(egui::Slider::new(&mut params.radius, 2.5..=20.0).text("Radius"));
-        ui.add_space(4.0);
-        ui.label("Left-click to place.");
-        ui.label("Right-click to cancel and erase.");
-        ui.label("Hold Shift to allow S-bends.");
+    egui::Window::new("Controls").show(ctx.ctx_mut(), |ui| {
+        ui.set_min_width(240.);
         ui.label("Scroll to zoom.");
         ui.label("Middle mouse to pan.");
+        ui.label("Drive trains with WASD.");
         ui.add_space(4.0);
+
         ui.horizontal(|ui| {
             let mut mut_state = state.0;
             ui.selectable_value(&mut mut_state, ControlState::None, "None");
@@ -192,5 +194,22 @@ pub fn control_ui(
                 commands.insert_resource(NextState(mut_state));
             }
         });
+
+        ui.add_space(4.0);
+
+        match state.0 {
+            ControlState::None => {}
+            ControlState::PlacingTracks => {
+                ui.add(egui::Slider::new(&mut params.radius, 2.5..=20.0).text("Radius"));
+                ui.add_space(4.0);
+                ui.label("Left-click to place.");
+                ui.label("Right-click to cancel and erase.");
+                ui.label("Hold Shift to allow S-bends.");
+            }
+            ControlState::PlacingTrains => {
+                ui.label("Left-click to place.");
+                ui.label("Right-click to destroy.");
+            }
+        };
     });
 }

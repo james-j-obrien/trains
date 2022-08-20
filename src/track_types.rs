@@ -21,10 +21,7 @@ impl TrackPos {
 
 impl From<(IVec2, Octant)> for TrackPos {
     fn from((vec, facing): (IVec2, Octant)) -> Self {
-        Self {
-            tile: (vec.x, vec.y),
-            facing,
-        }
+        Self::new((vec.x, vec.y), facing)
     }
 }
 
@@ -66,18 +63,18 @@ impl TrackSegment {
     }
 }
 
-impl From<(TileIndex, TileIndex, &TrackEdge)> for TrackSegment {
-    fn from((start, end, edge): (TileIndex, TileIndex, &TrackEdge)) -> Self {
-        if start < end {
-            Self {
-                start: TrackPos::new(start, edge.start),
-                end: TrackPos::new(end, edge.end),
-            }
-        } else {
-            Self {
-                start: TrackPos::new(end, edge.start),
-                end: TrackPos::new(start, edge.end),
-            }
-        }
-    }
-}
+// impl From<(TileIndex, TileIndex, &TrackEdge)> for TrackSegment {
+//     fn from((start, end, edge): (TileIndex, TileIndex, &TrackEdge)) -> Self {
+//         if start < end {
+//             Self {
+//                 start: TrackPos::new(start, edge.start),
+//                 end: TrackPos::new(end, edge.end),
+//             }
+//         } else {
+//             Self {
+//                 start: TrackPos::new(end, edge.start),
+//                 end: TrackPos::new(start, edge.end),
+//             }
+//         }
+//     }
+// }
