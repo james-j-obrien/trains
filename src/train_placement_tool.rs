@@ -1,6 +1,7 @@
 use bevy::utils::FloatOrd;
 use bevy_mod_picking::{Hover, PickableBundle};
 use bevy_prototype_lyon::prelude::tess::{geom::CubicBezierSegment, math::Point};
+use rand::prelude::*;
 
 use super::*;
 
@@ -108,6 +109,7 @@ pub fn find_nearest_track(
 pub struct TrainPlacementEvent {
     track: TrackID,
     sample: f32,
+    shift: bool,
 }
 
 pub fn train_placement_tool(
@@ -116,6 +118,7 @@ pub fn train_placement_tool(
     mouse_pos: Res<MousePos>,
     train: Query<Entity, With<TrainGhost>>,
     mouse_buttons: Res<Input<MouseButton>>,
+    keys: Res<Input<KeyCode>>,
     mut writer: EventWriter<TrainPlacementEvent>,
 ) {
     train.for_each(|e| commands.entity(e).despawn());
@@ -133,7 +136,12 @@ pub fn train_placement_tool(
             Color::rgba(0.0, 0.0, 1.0, 0.95),
         );
         if mouse_buttons.just_pressed(MouseButton::Left) {
-            writer.send(TrainPlacementEvent { track, sample })
+            let shift = keys.any_pressed([KeyCode::LShift, KeyCode::RShift]);
+            writer.send(TrainPlacementEvent {
+                track,
+                sample,
+                shift,
+            })
         }
     }
 }
@@ -177,19 +185,20 @@ pub fn place_train(
                 ..default()
             };
 
-            commands
-                .spawn_bundle(GeometryBuilder::build_as(
-                    &circle,
-                    DrawMode::Fill(FillMode::color(Color::BLUE)),
-                    Transform::from_translation(pos.extend(20.)),
-                ))
-                .insert_bundle(PickableBundle::default())
-                .insert(Train {
-                    track_edge: TrackEdge::pos(event.track),
-                    sample: event.sample,
-                    speed: 0.,
-                })
-                .insert(Driving(TrackDirection::POS));
+            let mut ec = commands.spawn_bundle(GeometryBuilder::build_as(
+                &circle,
+                DrawMode::Fill(FillMode::color(Color::BLUE)),
+                Transform::from_translation(pos.extend(20.)),
+            ));
+
+            ec.insert_bundle(PickableBundle::default()).insert(Train {
+                track_edge: TrackEdge::pos(event.track),
+                sample: event.sample,
+                speed: 0.,
+            });
+            if !event.shift {
+                ec.insert(Driving(TrackDirection::POS));
+            }
         }
     }
 }
@@ -212,9 +221,9 @@ fn update_train<F>(
     tf: &mut Transform,
     network: &Network,
     delta: f32,
-    choose_track: F,
+    mut choose_track: F,
 ) where
-    F: Fn(&[(&TrackEdge, &TrackData)]) -> usize,
+    F: FnMut(&[(&TrackEdge, &TrackData)]) -> usize,
 {
     let data = network.get_data(train.track_edge);
     if let Some(mut track_data) = data {
@@ -318,6 +327,24 @@ pub fn drive_trains(
                 },
             );
         }
+    });
+}
+
+pub fn update_trains(
+    time: Res<Time>,
+    network: Res<Network>,
+    mut rand: ResMut<StdRng>,
+    mut trains: Query<(&mut Train, &mut Transform), Without<Driving>>,
+) {
+    trains.for_each_mut(|(mut train, mut tf)| {
+        train.speed = (train.speed + time.delta_seconds() * TRAIN_ACC).min(300.);
+        update_train(
+            &mut train,
+            &mut tf,
+            network.as_ref(),
+            time.delta_seconds(),
+            |exits| rand.gen_range(0..exits.len()),
+        );
     });
 }
 

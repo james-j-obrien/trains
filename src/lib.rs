@@ -6,6 +6,7 @@ use bevy_egui::{egui, EguiContext};
 
 use bevy_mod_picking::{DefaultPickingPlugins, PickingCameraBundle};
 use bevy_prototype_lyon::{prelude::*, shapes};
+use rand::SeedableRng;
 
 mod camera;
 use camera::*;
@@ -70,6 +71,7 @@ pub fn app() -> App {
     .add_loopless_state(ControlState::PlacingTracks)
     .insert_resource(MousePos(None))
     .insert_resource(PlacementState::default())
+    .insert_resource(rand::rngs::StdRng::from_entropy())
     .add_event::<TrackPlacementEvent>()
     .add_event::<TrainPlacementEvent>()
     .add_event::<NetworkRenderEvent>()
@@ -82,6 +84,7 @@ pub fn app() -> App {
     .add_system(place_tracks)
     .add_system(place_train)
     .add_system(drive_trains)
+    .add_system(update_trains)
     .add_system(extract_network_to_mesh.after(place_tracks))
     .add_system(highlight.after(mouse_to_world))
     .add_system_set(
@@ -209,6 +212,7 @@ pub fn control_ui(
             ControlState::PlacingTrains => {
                 ui.label("Left-click to place.");
                 ui.label("Right-click to destroy.");
+                ui.label("Hold Shift for self-driving.");
             }
         };
     });

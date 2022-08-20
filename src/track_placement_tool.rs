@@ -58,6 +58,9 @@ impl TrackParams {
         allow_bends: bool,
     ) -> Vec<(TileVec, Octant)> {
         let mut tracks = Vec::new();
+        if start_tile == target_tile {
+            return tracks;
+        }
         tracks.push((start_tile, start_facing));
 
         let start_vec = start_tile.as_vec2();
@@ -294,6 +297,9 @@ pub fn track_placement_tool(
             (Some(start_tile), Some(facing)) => {
                 let mut path = PathBuilder::new();
                 let tracks = params.place_tracks(start_tile, facing, mouse_tile, shift);
+                if tracks.is_empty() {
+                    return;
+                }
                 let segments: Vec<TrackSegment> = tracks
                     .windows(2)
                     .map(|pair| TrackSegment::from_directed(pair[0], pair[1]))
