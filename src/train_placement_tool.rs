@@ -271,11 +271,11 @@ pub fn drive_trains(
     trains.for_each_mut(|(mut train, mut tf, mut driving)| {
         if keys.pressed(KeyCode::W) {
             train.speed =
-                (train.speed + time.delta_seconds() * TRAIN_ACC * driving.0.signum()).min(300.);
+                (train.speed + time.delta_seconds() * TRAIN_ACC * driving.0.signum()).clamp(-300., 300.);
         }
         if keys.pressed(KeyCode::S) {
             train.speed =
-                (train.speed - time.delta_seconds() * TRAIN_ACC * driving.0.signum()).max(-300.);
+                (train.speed - time.delta_seconds() * TRAIN_ACC * driving.0.signum()).clamp(-300., 300.);
         }
         if train.speed < 0. {
             train.flip();
